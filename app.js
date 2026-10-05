@@ -123,8 +123,6 @@ const Queries = {
 // 5. QUERY ENGINE
 // ============================================================
 
-// matches checks if a given state matches a query, considering null as a wildcard.
-
 function matches(query, state) {
   return (
     (query.subject === null || state.subject === query.subject) &&
@@ -132,8 +130,6 @@ function matches(query, state) {
     (query.object === null || state.object === query.object)
   );
 }
-
-// queryStates takes a query and a list of states, and returns all states that match the query.
 
 function queryStates(query, states) {
   const collectedStates = [];
@@ -151,13 +147,9 @@ function queryStates(query, states) {
 // 6. VARIABLE / PATTERN ENGINE
 // ============================================================
 
-// isVariable checks if a given value is a variable (starts with "?").
-
 function isVariable(value) {
   return typeof value === "string" && value.startsWith("?");
 }
-
-// resolveValue takes a value and bindings, and returns the resolved value if it's a variable, or the original value otherwise.
 
 function resolveValue(value, bindings) {
   if (isVariable(value)) {
@@ -166,8 +158,6 @@ function resolveValue(value, bindings) {
 
   return value;
 }
-
-// matchValue checks if a pattern value matches a state value given the current bindings.
 
 function matchValue(patternValue, stateValue, bindings) {
   if (!isVariable(patternValue)) {
@@ -182,8 +172,6 @@ function matchValue(patternValue, stateValue, bindings) {
   return bindings[patternValue] === stateValue;
 }
 
-// resolvePattern takes a pattern and bindings, and returns a new pattern with all variables resolved to their bound values.
-
 function resolvePattern(pattern, bindings) {
   return {
     subject: resolveValue(pattern.subject, bindings),
@@ -191,8 +179,6 @@ function resolvePattern(pattern, bindings) {
     object: resolveValue(pattern.object, bindings),
   };
 }
-
-// matchPattern checks if a given state matches a pattern with the provided bindings.
 
 function matchPattern(pattern, state, bindings) {
   return (
@@ -202,26 +188,18 @@ function matchPattern(pattern, state, bindings) {
   );
 }
 
-// findPatternMatches is a utility function to find all states that match a given pattern with the provided bindings.
-
 function findPatternMatches(pattern, states, bindings) {
-  const matches = [];
+  const patternMatches = [];
 
   for (const state of states) {
     const localBindings = { ...bindings };
-    try {
-      if (matchPattern(pattern, state, localBindings)) {
-        matches.push({ state, bindings: localBindings });
-      }
-    } catch (error) {
-      // Ignore errors and continue with the next state
+    if (matchPattern(pattern, state, localBindings)) {
+      patternMatches.push({ state, bindings: localBindings });
     }
   }
-  console.log("Pattern matches:", matches);
 
-  return matches;
+  return patternMatches;
 }
-
 
 // ============================================================
 // 8. EXPERIMENT: MANUALLY EXECUTE THE DATA-BASED RULE
@@ -229,4 +207,29 @@ function findPatternMatches(pattern, states, bindings) {
 
 const bindings = {};
 
-findPatternMatches(Rules.HeldObjectLocation.when[0], states, bindings);
+const firstMatches = findPatternMatches(
+  Rules.HeldObjectLocation.when[0],
+  states,
+  {},
+);
+
+console.log("First matches:", firstMatches);
+
+const ruleMatches = [];
+
+for (const firstMatch of firstMatches) {
+  const secondMatches = findPatternMatches(
+    Rules.HeldObjectLocation.when[1],
+    states,
+    firstMatch.bindings,
+  );
+
+  for (const secondMatch of secondMatches) {
+    ruleMatches.push({
+      bindings: secondMatch.bindings,
+
+      matchedStates: [firstMatch.state, secondMatch.state],
+    });
+  }
+}
+console.log("Rule matches:", ruleMatches);
