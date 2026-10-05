@@ -43,6 +43,10 @@ const Relationship = {
     name: "opens",
     type: "relationship",
   },
+  CanOpen: {
+    name: "can open",
+    type: "relationship",
+  },
 };
 
 // ============================================================
@@ -99,6 +103,29 @@ const Rules = {
     then: {
       subject: "?held",
       predicate: Relationship.IsIn,
+      object: "?location",
+    },
+  },
+  CanOpen: {
+    name: "can-open",
+
+    when: [
+      {
+        subject: "?holder",
+        predicate: Relationship.Holding,
+        object: "?held",
+      },
+
+      {
+        subject: "?held",
+        predicate: Relationship.Opens,
+        object: "?location",
+      },
+    ],
+
+    then: {
+      subject: "?holder",
+      predicate: Relationship.CanOpen,
       object: "?location",
     },
   },
@@ -215,20 +242,30 @@ function findPatternMatches(pattern, states, bindings) {
 // ============================================================
 
 function findRuleMatches(rule, states) {
-  const paths = [{ bindings: {}, matchedStates: [] }];
+  let paths = [
+    {
+      bindings: {},
+      matchedStates: [],
+    },
+  ];
+
   for (const pattern of rule.when) {
     const nextPaths = [];
+
     for (const path of paths) {
-      const matches = findPatternMatches(pattern, states, path.bindings);
-      for (const match of matches) {
+      const patternMatches = findPatternMatches(pattern, states, path.bindings);
+
+      for (const match of patternMatches) {
         nextPaths.push({
           bindings: match.bindings,
           matchedStates: [...path.matchedStates, match.state],
         });
       }
     }
-    paths.splice(0, paths.length, ...nextPaths);
+
+    paths = nextPaths;
   }
+
   return paths;
 }
 
@@ -248,3 +285,4 @@ function applyRule(rule, states) {
 }
 
 console.log(applyRule(Rules.HeldObjectLocation, states));
+console.log(applyRule(Rules.CanOpen, states));
