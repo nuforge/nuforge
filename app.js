@@ -17,6 +17,10 @@ const Entity = {
     name: "key",
     type: "object",
   },
+  Book: {
+    name: "Book",
+    type: "object",
+  },
 
   Vault: {
     name: "vault",
@@ -50,6 +54,11 @@ const states = [
     subject: Entity.Alice,
     predicate: Relationship.Holding,
     object: Entity.Key,
+  },
+  {
+    subject: Entity.Alice,
+    predicate: Relationship.Holding,
+    object: Entity.Book,
   },
 
   {
@@ -205,31 +214,37 @@ function findPatternMatches(pattern, states, bindings) {
 // 8. EXPERIMENT: MANUALLY EXECUTE THE DATA-BASED RULE
 // ============================================================
 
-const bindings = {};
-
-const firstMatches = findPatternMatches(
-  Rules.HeldObjectLocation.when[0],
-  states,
-  {},
-);
-
-console.log("First matches:", firstMatches);
-
-const ruleMatches = [];
-
-for (const firstMatch of firstMatches) {
-  const secondMatches = findPatternMatches(
-    Rules.HeldObjectLocation.when[1],
-    states,
-    firstMatch.bindings,
-  );
-
-  for (const secondMatch of secondMatches) {
-    ruleMatches.push({
-      bindings: secondMatch.bindings,
-
-      matchedStates: [firstMatch.state, secondMatch.state],
-    });
+function findRuleMatches(rule, states) {
+  const paths = [{ bindings: {}, matchedStates: [] }];
+  for (const pattern of rule.when) {
+    const nextPaths = [];
+    for (const path of paths) {
+      const matches = findPatternMatches(pattern, states, path.bindings);
+      for (const match of matches) {
+        nextPaths.push({
+          bindings: match.bindings,
+          matchedStates: [...path.matchedStates, match.state],
+        });
+      }
+    }
+    paths.splice(0, paths.length, ...nextPaths);
   }
+  return paths;
 }
-console.log("Rule matches:", ruleMatches);
+
+function applyRule(rule, states) {
+  const paths = findRuleMatches(rule, states);
+  const derivedStates = [];
+  for (const path of paths) {
+    const derivedState = resolvePattern(rule.then, path.bindings);
+    derivedState.provenance = {
+      derived: true,
+      rule: rule,
+      derivedFrom: path.matchedStates,
+    };
+    derivedStates.push(derivedState);
+  }
+  return derivedStates;
+}
+
+console.log(applyRule(Rules.HeldObjectLocation, states));
