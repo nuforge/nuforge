@@ -123,6 +123,8 @@ const Queries = {
 // 5. QUERY ENGINE
 // ============================================================
 
+// matches checks if a given state matches a query, considering null as a wildcard.
+
 function matches(query, state) {
   return (
     (query.subject === null || state.subject === query.subject) &&
@@ -130,6 +132,8 @@ function matches(query, state) {
     (query.object === null || state.object === query.object)
   );
 }
+
+// queryStates takes a query and a list of states, and returns all states that match the query.
 
 function queryStates(query, states) {
   const collectedStates = [];
@@ -147,9 +151,23 @@ function queryStates(query, states) {
 // 6. VARIABLE / PATTERN ENGINE
 // ============================================================
 
+// isVariable checks if a given value is a variable (starts with "?").
+
 function isVariable(value) {
   return typeof value === "string" && value.startsWith("?");
 }
+
+// resolveValue takes a value and bindings, and returns the resolved value if it's a variable, or the original value otherwise.
+
+function resolveValue(value, bindings) {
+  if (isVariable(value)) {
+    return bindings[value];
+  }
+
+  return value;
+}
+
+// matchValue checks if a pattern value matches a state value given the current bindings.
 
 function matchValue(patternValue, stateValue, bindings) {
   if (!isVariable(patternValue)) {
@@ -164,21 +182,7 @@ function matchValue(patternValue, stateValue, bindings) {
   return bindings[patternValue] === stateValue;
 }
 
-function matchPattern(pattern, state, bindings) {
-  return (
-    matchValue(pattern.subject, state.subject, bindings) &&
-    matchValue(pattern.predicate, state.predicate, bindings) &&
-    matchValue(pattern.object, state.object, bindings)
-  );
-}
-
-function resolveValue(value, bindings) {
-  if (isVariable(value)) {
-    return bindings[value];
-  }
-
-  return value;
-}
+// resolvePattern takes a pattern and bindings, and returns a new pattern with all variables resolved to their bound values.
 
 function resolvePattern(pattern, bindings) {
   return {
@@ -188,44 +192,36 @@ function resolvePattern(pattern, bindings) {
   };
 }
 
-// ============================================================
-// 7. OLD HARD-CODED RULE
-// Reference implementation only.
-// ============================================================
+// matchPattern checks if a given state matches a pattern with the provided bindings.
 
-function deriveHeldObjectLocations(states) {
-  const heldObjectLocations = [];
+function matchPattern(pattern, state, bindings) {
+  return (
+    matchValue(pattern.subject, state.subject, bindings) &&
+    matchValue(pattern.predicate, state.predicate, bindings) &&
+    matchValue(pattern.object, state.object, bindings)
+  );
+}
 
-  for (const holdingState of states) {
-    if (holdingState.predicate !== Relationship.Holding) {
-      continue;
-    }
+// findPatternMatches is a utility function to find all states that match a given pattern with the provided bindings.
 
-    const heldObject = holdingState.object;
-    const holder = holdingState.subject;
+function findPatternMatches(pattern, states, bindings) {
+  const matches = [];
 
-    for (const locationState of states) {
-      if (
-        locationState.subject === holder &&
-        locationState.predicate === Relationship.IsIn
-      ) {
-        heldObjectLocations.push({
-          subject: heldObject,
-          predicate: Relationship.IsIn,
-          object: locationState.object,
-
-          provenance: {
-            derived: true,
-            rule: Rules.HeldObjectLocation,
-            derivedFrom: [holdingState, locationState],
-          },
-        });
+  for (const state of states) {
+    const localBindings = { ...bindings };
+    try {
+      if (matchPattern(pattern, state, localBindings)) {
+        matches.push({ state, bindings: localBindings });
       }
+    } catch (error) {
+      // Ignore errors and continue with the next state
     }
   }
+  console.log("Pattern matches:", matches);
 
-  return heldObjectLocations;
+  return matches;
 }
+
 
 // ============================================================
 // 8. EXPERIMENT: MANUALLY EXECUTE THE DATA-BASED RULE
@@ -233,33 +229,4 @@ function deriveHeldObjectLocations(states) {
 
 const bindings = {};
 
-const firstMatch = matchPattern(
-  Rules.HeldObjectLocation.when[0],
-  states[0],
-  bindings,
-);
-
-console.log("First pattern matched:", firstMatch);
-console.log("Bindings:", bindings);
-
-const secondMatch = matchPattern(
-  Rules.HeldObjectLocation.when[1],
-  states[1],
-  bindings,
-);
-
-console.log("Second pattern matched:", secondMatch);
-console.log("Bindings:", bindings);
-
-const derivedPattern = resolvePattern(Rules.HeldObjectLocation.then, bindings);
-
-console.log("Resolved THEN pattern:", derivedPattern);
-
-// ============================================================
-// 9. COMPARE AGAINST OLD IMPLEMENTATION
-// ============================================================
-
-const oldDerivedStates = deriveHeldObjectLocations(states);
-
-console.log("Old hard-coded result:", oldDerivedStates);
-console.log("New pattern-based result:", derivedPattern);
+findPatternMatches(Rules.HeldObjectLocation.when[0], states, bindings);
