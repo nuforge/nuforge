@@ -2,7 +2,7 @@
 // 1. VOCABULARY
 // ============================================================
 
-const Entity = {
+const Term = {
   Alice: {
     name: "Alice",
     type: "person",
@@ -31,9 +31,6 @@ const Entity = {
     name: "vault",
     type: "location",
   },
-};
-
-const Relationship = {
   Holding: {
     name: "holding",
     type: "relationship",
@@ -55,34 +52,38 @@ const Relationship = {
     name: "grants access",
     type: "relationship",
   },
+  Provides: {
+    name: "provides",
+    type: "relationship",
+  },
 };
 
 // ============================================================
-// 2. ESTABLISHED STATE
+// 2. ESTABLISHED ASSERTIONS
 // ============================================================
 
-const states = [
+const assertions = [
   {
-    subject: Entity.Alice,
-    predicate: Relationship.Holding,
-    object: Entity.Key,
+    subject: Term.Alice,
+    predicate: Term.Holding,
+    object: Term.Key,
   },
   {
-    subject: Entity.Alice,
-    predicate: Relationship.Holding,
-    object: Entity.Book,
-  },
-
-  {
-    subject: Entity.Alice,
-    predicate: Relationship.IsIn,
-    object: Entity.Library,
+    subject: Term.Alice,
+    predicate: Term.Holding,
+    object: Term.Book,
   },
 
   {
-    subject: Entity.Key,
-    predicate: Relationship.Opens,
-    object: Entity.Vault,
+    subject: Term.Alice,
+    predicate: Term.IsIn,
+    object: Term.Library,
+  },
+
+  {
+    subject: Term.Key,
+    predicate: Term.Opens,
+    object: Term.Vault,
   },
 ];
 
@@ -97,20 +98,20 @@ const Rules = {
     when: [
       {
         subject: "?holder",
-        predicate: Relationship.Holding,
+        predicate: Term.Holding,
         object: "?held",
       },
 
       {
         subject: "?holder",
-        predicate: Relationship.IsIn,
+        predicate: Term.IsIn,
         object: "?location",
       },
     ],
 
     then: {
       subject: "?held",
-      predicate: Relationship.IsIn,
+      predicate: Term.IsIn,
       object: "?location",
     },
   },
@@ -121,20 +122,20 @@ const Rules = {
     when: [
       {
         subject: "?holder",
-        predicate: Relationship.Holding,
+        predicate: Term.Holding,
         object: "?held",
       },
 
       {
         subject: "?held",
-        predicate: Relationship.Opens,
+        predicate: Term.Opens,
         object: "?target",
       },
     ],
 
     then: {
       subject: "?holder",
-      predicate: Relationship.CanOpen,
+      predicate: Term.CanOpen,
       object: "?target",
     },
   },
@@ -145,63 +146,42 @@ const Rules = {
     when: [
       {
         subject: "?item",
-        predicate: Relationship.IsIn,
+        predicate: Term.IsIn,
         object: "?location",
       },
       {
         subject: "?item",
-        predicate: Relationship.Opens,
+        predicate: Term.Opens,
         object: "?target",
       },
     ],
 
     then: {
       subject: "?location",
-      predicate: Relationship.GrantsAccess,
+      predicate: Term.GrantsAccess,
       object: "?target",
     },
   },
 };
 
 // ============================================================
-// 4. QUERIES
+// 4. REQUESTS
 // ============================================================
-
-const Queries = {
-  AliceLocation: {
-    subject: Entity.Alice,
-    predicate: Relationship.IsIn,
-    object: "?location",
-  },
-
-  AliceHoldingKey: {
-    subject: Entity.Alice,
-    predicate: Relationship.Holding,
-    object: Entity.Key,
-  },
-
-  KeyInLibrary: {
-    subject: Entity.Key,
-    predicate: Relationship.IsIn,
-    object: Entity.Library,
-  },
-  LibraryGrantsAccessVault: {
-    subject: Entity.Library,
-    predicate: Relationship.GrantsAccess,
-    object: Entity.Vault,
-  },
-};
 
 const Requests = {
   AliceLocation: {
-    pattern: Queries.AliceLocation,
+    pattern: {
+      subject: Term.Alice,
+      predicate: Term.IsIn,
+      object: "?location",
+    },
     policy: "first",
   },
 
   EverythingAliceHolds: {
     pattern: {
-      subject: Entity.Alice,
-      predicate: Relationship.Holding,
+      subject: Term.Alice,
+      predicate: Term.Holding,
       object: "?item",
     },
     policy: "all",
@@ -209,8 +189,8 @@ const Requests = {
 
   SomethingAliceHolds: {
     pattern: {
-      subject: Entity.Alice,
-      predicate: Relationship.Holding,
+      subject: Term.Alice,
+      predicate: Term.Holding,
       object: "?item",
     },
     policy: "first",
@@ -218,15 +198,7 @@ const Requests = {
 };
 
 // ============================================================
-// 5. QUERY ENGINE
-// ============================================================
-
-function queryStates(query, states) {
-  return findPatternMatches(query, states, {});
-}
-
-// ============================================================
-// 6. VARIABLE / PATTERN ENGINE
+// 5. VARIABLE / PATTERN ENGINE
 // ============================================================
 
 function isVariable(value) {
@@ -253,11 +225,11 @@ function resolveValue(value, bindings) {
   return value;
 }
 
-function matchPattern(pattern, state, bindings) {
+function matchPattern(pattern, assertion, bindings) {
   return (
-    matchValue(pattern.subject, state.subject, bindings) &&
-    matchValue(pattern.predicate, state.predicate, bindings) &&
-    matchValue(pattern.object, state.object, bindings)
+    matchValue(pattern.subject, assertion.subject, bindings) &&
+    matchValue(pattern.predicate, assertion.predicate, bindings) &&
+    matchValue(pattern.object, assertion.object, bindings)
   );
 }
 
@@ -269,24 +241,24 @@ function resolvePattern(pattern, bindings) {
   };
 }
 
-function findPatternMatches(pattern, states, bindings) {
+function findPatternMatches(pattern, assertions, bindings) {
   const patternMatches = [];
 
-  for (const state of states) {
+  for (const assertion of assertions) {
     const localBindings = { ...bindings };
-    if (matchPattern(pattern, state, localBindings)) {
-      patternMatches.push({ state, bindings: localBindings });
+    if (matchPattern(pattern, assertion, localBindings)) {
+      patternMatches.push({ assertion, bindings: localBindings });
     }
   }
 
   return patternMatches;
 }
 
-function findRuleMatches(rule, states) {
+function findRuleMatches(rule, assertions) {
   let paths = [
     {
       bindings: {},
-      matchedStates: [],
+      matchedAssertions: [],
     },
   ];
 
@@ -294,12 +266,16 @@ function findRuleMatches(rule, states) {
     const nextPaths = [];
 
     for (const path of paths) {
-      const patternMatches = findPatternMatches(pattern, states, path.bindings);
+      const patternMatches = findPatternMatches(
+        pattern,
+        assertions,
+        path.bindings,
+      );
 
       for (const match of patternMatches) {
         nextPaths.push({
           bindings: match.bindings,
-          matchedStates: [...path.matchedStates, match.state],
+          matchedAssertions: [...path.matchedAssertions, match.assertion],
         });
       }
     }
@@ -310,98 +286,91 @@ function findRuleMatches(rule, states) {
   return paths;
 }
 
-function applyRule(rule, states) {
-  const paths = findRuleMatches(rule, states);
-  const derivedStates = [];
+function applyRule(rule, assertions) {
+  const paths = findRuleMatches(rule, assertions);
+  const derivedAssertions = [];
   for (const path of paths) {
-    const derivedState = resolvePattern(rule.then, path.bindings);
-    derivedState.provenance = {
+    const derivedAssertion = resolvePattern(rule.then, path.bindings);
+    derivedAssertion.provenance = {
       derived: true,
       rule: rule,
-      derivedFrom: path.matchedStates,
+      derivedFrom: path.matchedAssertions,
     };
-    derivedStates.push(derivedState);
+    derivedAssertions.push(derivedAssertion);
   }
-  return derivedStates;
+  return derivedAssertions;
 }
 
-function sameState(state1, state2) {
+function sameAssertion(assertion1, assertion2) {
   return (
-    state1.subject === state2.subject &&
-    state1.predicate === state2.predicate &&
-    state1.object === state2.object
+    assertion1.subject === assertion2.subject &&
+    assertion1.predicate === assertion2.predicate &&
+    assertion1.object === assertion2.object
   );
 }
 
-function hasState(states, candidate) {
-  return states.some((state) => sameState(state, candidate));
+function hasAssertion(assertions, candidate) {
+  return assertions.some((assertion) => sameAssertion(assertion, candidate));
 }
 
-function applyRulesOnce(rules, knownStates) {
-  const newStates = [];
+function applyRulesOnce(rules, knownAssertions) {
+  const newAssertions = [];
 
   for (const rule of Object.values(rules)) {
-    const derivedStates = applyRule(rule, knownStates);
+    const derivedAssertions = applyRule(rule, knownAssertions);
 
-    for (const derivedState of derivedStates) {
+    for (const derivedAssertion of derivedAssertions) {
       const alreadyKnown =
-        hasState(knownStates, derivedState) ||
-        hasState(newStates, derivedState);
+        hasAssertion(knownAssertions, derivedAssertion) ||
+        hasAssertion(newAssertions, derivedAssertion);
 
       if (!alreadyKnown) {
-        newStates.push(derivedState);
+        newAssertions.push(derivedAssertion);
       }
     }
   }
 
-  return newStates;
+  return newAssertions;
 }
 
-function deriveUntilStable(rules, initialStates) {
-  let knownStates = [...initialStates];
-  let newStates;
+function deriveUntilStable(rules, initialAssertions) {
+  let knownAssertions = [...initialAssertions];
+  let newAssertions;
   do {
-    newStates = applyRulesOnce(rules, knownStates);
-    knownStates = [...knownStates, ...newStates];
-  } while (newStates.length > 0);
-  return knownStates;
+    newAssertions = applyRulesOnce(rules, knownAssertions);
+    knownAssertions = [...knownAssertions, ...newAssertions];
+  } while (newAssertions.length > 0);
+  return knownAssertions;
 }
 
-function resolveQuery(query, rules, states) {
-  let currentStates = [...states];
-  let result = queryStates(query, currentStates);
-
-  if (result.length > 0) {
-    return result;
-  }
-
-  while (true) {
-    const newStates = applyRulesOnce(rules, currentStates);
-
-    if (newStates.length === 0) {
-      return [];
-    }
-
-    currentStates = [...currentStates, ...newStates];
-    result = queryStates(query, currentStates);
-
-    if (result.length > 0) {
-      return result;
-    }
-  }
-}
-
-function resolveFirst(pattern, rules, states) {
-  return resolveQuery(pattern, rules, states);
-}
-
-function resolveRequest(request, rules, states) {
+function resolveRequest(request, rules, assertions) {
   if (request.policy === "first") {
-    return resolveFirst(request.pattern, rules, states);
+    let currentAssertions = [...assertions];
+    let matches = findPatternMatches(request.pattern, currentAssertions, {});
+
+    if (matches.length > 0) {
+      return matches;
+    }
+
+    while (true) {
+      const newAssertions = applyRulesOnce(rules, currentAssertions);
+
+      if (newAssertions.length === 0) {
+        return [];
+      }
+
+      currentAssertions = [...currentAssertions, ...newAssertions];
+      matches = findPatternMatches(request.pattern, currentAssertions, {});
+
+      if (matches.length > 0) {
+        return matches;
+      }
+    }
   }
+
   if (request.policy === "all") {
-    const allStates = deriveUntilStable(rules, states);
-    return queryStates(request.pattern, allStates);
+    const allAssertions = deriveUntilStable(rules, assertions);
+    return findPatternMatches(request.pattern, allAssertions, {});
   }
 
   throw new Error(`Unknown request policy: ${request.policy}`);
@@ -411,38 +380,33 @@ function resolveRequest(request, rules, states) {
 // 8. RESOLUTION EXPERIMENT
 // ============================================================
 
-Relationship.Provides = {
-  name: "provides",
-  type: "relationship",
-};
-
 Rules.ProvidesMap = {
   name: "provides-map",
 
   when: [
     {
       subject: "?person",
-      predicate: Relationship.IsIn,
+      predicate: Term.IsIn,
       object: "?location",
     },
     {
       subject: "?location",
-      predicate: Relationship.Provides,
+      predicate: Term.Provides,
       object: "?item",
     },
   ],
   then: {
     subject: "?person",
-    predicate: Relationship.Holding,
-    object: Entity.Map,
+    predicate: Term.Holding,
+    object: "?item",
   },
 };
 
-states.push({
-  subject: Entity.Library,
-  predicate: Relationship.Provides,
-  object: Entity.Map,
+assertions.push({
+  subject: Term.Library,
+  predicate: Term.Provides,
+  object: Term.Map,
 });
 
-console.log(resolveRequest(Requests.SomethingAliceHolds, Rules, states));
-console.log(resolveRequest(Requests.EverythingAliceHolds, Rules, states));
+console.log(resolveRequest(Requests.SomethingAliceHolds, Rules, assertions));
+console.log(resolveRequest(Requests.EverythingAliceHolds, Rules, assertions));
