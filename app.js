@@ -22,6 +22,11 @@ const Entity = {
     type: "object",
   },
 
+  Map: {
+    name: "map",
+    type: "object",
+  },
+
   Vault: {
     name: "vault",
     type: "location",
@@ -47,7 +52,7 @@ const Relationship = {
     type: "relationship",
   },
   GrantsAccess: {
-    name: "grants-access",
+    name: "grants access",
     type: "relationship",
   },
 };
@@ -166,7 +171,7 @@ const Queries = {
   AliceLocation: {
     subject: Entity.Alice,
     predicate: Relationship.IsIn,
-    object: null,
+    object: "?location",
   },
 
   AliceHoldingKey: {
@@ -180,30 +185,44 @@ const Queries = {
     predicate: Relationship.IsIn,
     object: Entity.Library,
   },
+  LibraryGrantsAccessVault: {
+    subject: Entity.Library,
+    predicate: Relationship.GrantsAccess,
+    object: Entity.Vault,
+  },
+};
+
+const Requests = {
+  AliceLocation: {
+    pattern: Queries.AliceLocation,
+    policy: "first",
+  },
+
+  EverythingAliceHolds: {
+    pattern: {
+      subject: Entity.Alice,
+      predicate: Relationship.Holding,
+      object: "?item",
+    },
+    policy: "all",
+  },
+
+  SomethingAliceHolds: {
+    pattern: {
+      subject: Entity.Alice,
+      predicate: Relationship.Holding,
+      object: "?item",
+    },
+    policy: "first",
+  },
 };
 
 // ============================================================
 // 5. QUERY ENGINE
 // ============================================================
 
-function matches(query, state) {
-  return (
-    (query.subject === null || state.subject === query.subject) &&
-    (query.predicate === null || state.predicate === query.predicate) &&
-    (query.object === null || state.object === query.object)
-  );
-}
-
 function queryStates(query, states) {
-  const collectedStates = [];
-
-  for (const state of states) {
-    if (matches(query, state)) {
-      collectedStates.push(state);
-    }
-  }
-
-  return collectedStates;
+  return findPatternMatches(query, states, {});
 }
 
 // ============================================================
@@ -314,13 +333,116 @@ function sameState(state1, state2) {
   );
 }
 
+function hasState(states, candidate) {
+  return states.some((state) => sameState(state, candidate));
+}
+
+function applyRulesOnce(rules, knownStates) {
+  const newStates = [];
+
+  for (const rule of Object.values(rules)) {
+    const derivedStates = applyRule(rule, knownStates);
+
+    for (const derivedState of derivedStates) {
+      const alreadyKnown =
+        hasState(knownStates, derivedState) ||
+        hasState(newStates, derivedState);
+
+      if (!alreadyKnown) {
+        newStates.push(derivedState);
+      }
+    }
+  }
+
+  return newStates;
+}
+
+function deriveUntilStable(rules, initialStates) {
+  let knownStates = [...initialStates];
+  let newStates;
+  do {
+    newStates = applyRulesOnce(rules, knownStates);
+    knownStates = [...knownStates, ...newStates];
+  } while (newStates.length > 0);
+  return knownStates;
+}
+
+function resolveQuery(query, rules, states) {
+  let currentStates = [...states];
+  let result = queryStates(query, currentStates);
+
+  if (result.length > 0) {
+    return result;
+  }
+
+  while (true) {
+    const newStates = applyRulesOnce(rules, currentStates);
+
+    if (newStates.length === 0) {
+      return [];
+    }
+
+    currentStates = [...currentStates, ...newStates];
+    result = queryStates(query, currentStates);
+
+    if (result.length > 0) {
+      return result;
+    }
+  }
+}
+
+function resolveFirst(pattern, rules, states) {
+  return resolveQuery(pattern, rules, states);
+}
+
+function resolveRequest(request, rules, states) {
+  if (request.policy === "first") {
+    return resolveFirst(request.pattern, rules, states);
+  }
+  if (request.policy === "all") {
+    const allStates = deriveUntilStable(rules, states);
+    return queryStates(request.pattern, allStates);
+  }
+
+  throw new Error(`Unknown request policy: ${request.policy}`);
+}
+
 // ============================================================
-// 8. EXPERIMENT: MANUALLY EXECUTE THE DATA-BASED RULE
+// 8. RESOLUTION EXPERIMENT
 // ============================================================
 
-const locationDerivations = applyRule(Rules.HeldObjectLocation, states);
-const knownStates = [...states, ...locationDerivations];
-const accessDerivations = applyRule(Rules.GrantAccess, knownStates);
-const allKnownStates = [...knownStates, ...accessDerivations];
-console.log("accessDerivations", accessDerivations);
-console.log("allKnownStates", allKnownStates);
+Relationship.Provides = {
+  name: "provides",
+  type: "relationship",
+};
+
+Rules.ProvidesMap = {
+  name: "provides-map",
+
+  when: [
+    {
+      subject: "?person",
+      predicate: Relationship.IsIn,
+      object: "?location",
+    },
+    {
+      subject: "?location",
+      predicate: Relationship.Provides,
+      object: "?item",
+    },
+  ],
+  then: {
+    subject: "?person",
+    predicate: Relationship.Holding,
+    object: Entity.Map,
+  },
+};
+
+states.push({
+  subject: Entity.Library,
+  predicate: Relationship.Provides,
+  object: Entity.Map,
+});
+
+console.log(resolveRequest(Requests.SomethingAliceHolds, Rules, states));
+console.log(resolveRequest(Requests.EverythingAliceHolds, Rules, states));
