@@ -33,7 +33,6 @@ const Relationship = {
     name: "holding",
     type: "relationship",
   },
-
   IsIn: {
     name: "in",
     type: "relationship",
@@ -45,6 +44,10 @@ const Relationship = {
   },
   CanOpen: {
     name: "can open",
+    type: "relationship",
+  },
+  GrantsAccess: {
+    name: "grants-access",
     type: "relationship",
   },
 };
@@ -106,6 +109,7 @@ const Rules = {
       object: "?location",
     },
   },
+
   CanOpen: {
     name: "can-open",
 
@@ -119,14 +123,37 @@ const Rules = {
       {
         subject: "?held",
         predicate: Relationship.Opens,
-        object: "?location",
+        object: "?target",
       },
     ],
 
     then: {
       subject: "?holder",
       predicate: Relationship.CanOpen,
-      object: "?location",
+      object: "?target",
+    },
+  },
+
+  GrantAccess: {
+    name: "grant-access",
+
+    when: [
+      {
+        subject: "?item",
+        predicate: Relationship.IsIn,
+        object: "?location",
+      },
+      {
+        subject: "?item",
+        predicate: Relationship.Opens,
+        object: "?target",
+      },
+    ],
+
+    then: {
+      subject: "?location",
+      predicate: Relationship.GrantsAccess,
+      object: "?target",
     },
   },
 };
@@ -187,14 +214,6 @@ function isVariable(value) {
   return typeof value === "string" && value.startsWith("?");
 }
 
-function resolveValue(value, bindings) {
-  if (isVariable(value)) {
-    return bindings[value];
-  }
-
-  return value;
-}
-
 function matchValue(patternValue, stateValue, bindings) {
   if (!isVariable(patternValue)) {
     return patternValue === stateValue;
@@ -208,12 +227,11 @@ function matchValue(patternValue, stateValue, bindings) {
   return bindings[patternValue] === stateValue;
 }
 
-function resolvePattern(pattern, bindings) {
-  return {
-    subject: resolveValue(pattern.subject, bindings),
-    predicate: resolveValue(pattern.predicate, bindings),
-    object: resolveValue(pattern.object, bindings),
-  };
+function resolveValue(value, bindings) {
+  if (isVariable(value)) {
+    return bindings[value];
+  }
+  return value;
 }
 
 function matchPattern(pattern, state, bindings) {
@@ -222,6 +240,14 @@ function matchPattern(pattern, state, bindings) {
     matchValue(pattern.predicate, state.predicate, bindings) &&
     matchValue(pattern.object, state.object, bindings)
   );
+}
+
+function resolvePattern(pattern, bindings) {
+  return {
+    subject: resolveValue(pattern.subject, bindings),
+    predicate: resolveValue(pattern.predicate, bindings),
+    object: resolveValue(pattern.object, bindings),
+  };
 }
 
 function findPatternMatches(pattern, states, bindings) {
@@ -236,10 +262,6 @@ function findPatternMatches(pattern, states, bindings) {
 
   return patternMatches;
 }
-
-// ============================================================
-// 8. EXPERIMENT: MANUALLY EXECUTE THE DATA-BASED RULE
-// ============================================================
 
 function findRuleMatches(rule, states) {
   let paths = [
@@ -284,5 +306,21 @@ function applyRule(rule, states) {
   return derivedStates;
 }
 
-console.log(applyRule(Rules.HeldObjectLocation, states));
-console.log(applyRule(Rules.CanOpen, states));
+function sameState(state1, state2) {
+  return (
+    state1.subject === state2.subject &&
+    state1.predicate === state2.predicate &&
+    state1.object === state2.object
+  );
+}
+
+// ============================================================
+// 8. EXPERIMENT: MANUALLY EXECUTE THE DATA-BASED RULE
+// ============================================================
+
+const locationDerivations = applyRule(Rules.HeldObjectLocation, states);
+const knownStates = [...states, ...locationDerivations];
+const accessDerivations = applyRule(Rules.GrantAccess, knownStates);
+const allKnownStates = [...knownStates, ...accessDerivations];
+console.log("accessDerivations", accessDerivations);
+console.log("allKnownStates", allKnownStates);
