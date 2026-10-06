@@ -187,6 +187,7 @@ const Rules = {
       object: "?item",
     },
   },
+  
   GivesMap: {
     name: "gives-map",
 
