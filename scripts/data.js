@@ -7,10 +7,9 @@ const Term = {
     name: "Alice",
     type: "person",
   },
-
-  Library: {
-    name: "Library",
-    type: "location",
+  Bob: {
+    name: "Bob",
+    type: "person",
   },
 
   Key: {
@@ -31,6 +30,11 @@ const Term = {
     name: "vault",
     type: "location",
   },
+  Library: {
+    name: "Library",
+    type: "location",
+  },
+
   Holding: {
     name: "holding",
     type: "relationship",
@@ -39,7 +43,6 @@ const Term = {
     name: "in",
     type: "relationship",
   },
-
   Opens: {
     name: "opens",
     type: "relationship",
@@ -56,6 +59,10 @@ const Term = {
     name: "provides",
     type: "relationship",
   },
+  Gives: {
+    name: "gives",
+    type: "relationship",
+  },
 };
 
 // ============================================================
@@ -63,27 +70,22 @@ const Term = {
 // ============================================================
 
 const assertions = [
-  {
-    subject: Term.Alice,
-    predicate: Term.Holding,
-    object: Term.Key,
-  },
-  {
-    subject: Term.Alice,
-    predicate: Term.Holding,
-    object: Term.Book,
-  },
-
+  // Alice is in the library
   {
     subject: Term.Alice,
     predicate: Term.IsIn,
     object: Term.Library,
   },
-
+  // Library provides the map
   {
-    subject: Term.Key,
-    predicate: Term.Opens,
-    object: Term.Vault,
+    subject: Term.Library,
+    predicate: Term.Provides,
+    object: Term.Map,
+  },
+  {
+    subject: Term.Bob,
+    predicate: Term.Gives,
+    object: Term.Map,
   },
 ];
 
@@ -162,6 +164,46 @@ const Rules = {
       object: "?target",
     },
   },
+
+  ProvidesMap: {
+    name: "provides-map",
+
+    when: [
+      {
+        subject: "?person",
+        predicate: Term.IsIn,
+        object: "?location",
+      },
+      {
+        subject: "?location",
+        predicate: Term.Provides,
+        object: "?item",
+      },
+    ],
+
+    then: {
+      subject: "?person",
+      predicate: Term.Holding,
+      object: "?item",
+    },
+  },
+  GivesMap: {
+    name: "gives-map",
+
+    when: [
+      {
+        subject: "?person",
+        predicate: Term.Gives,
+        object: Term.Map,
+      },
+    ],
+
+    then: {
+      subject: "?person",
+      predicate: Term.Holding,
+      object: Term.Map,
+    },
+  },
 };
 
 // ============================================================
@@ -200,31 +242,3 @@ const Requests = {
 // ============================================================
 // 8. RESOLUTION EXPERIMENT
 // ============================================================
-
-Rules.ProvidesMap = {
-  name: "provides-map",
-
-  when: [
-    {
-      subject: "?person",
-      predicate: Term.IsIn,
-      object: "?location",
-    },
-    {
-      subject: "?location",
-      predicate: Term.Provides,
-      object: "?item",
-    },
-  ],
-  then: {
-    subject: "?person",
-    predicate: Term.Holding,
-    object: "?item",
-  },
-};
-
-assertions.push({
-  subject: Term.Library,
-  predicate: Term.Provides,
-  object: Term.Map,
-});

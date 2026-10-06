@@ -10,3 +10,4 @@ for (const request of [
   console.log(result);
   console.log(formatTrace(trace));
 }
+
