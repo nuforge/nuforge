@@ -288,7 +288,7 @@ function findRuleMatches(rule, assertions) {
 
 function applyRule(rule, assertions) {
   const paths = findRuleMatches(rule, assertions);
-  const derivedAssertions = [];
+  const derivations = [];
   for (const path of paths) {
     const derivedAssertion = resolvePattern(rule.then, path.bindings);
     derivedAssertion.provenance = {
@@ -296,9 +296,9 @@ function applyRule(rule, assertions) {
       rule: rule,
       derivedFrom: path.matchedAssertions,
     };
-    derivedAssertions.push(derivedAssertion);
+    derivations.push({ path, derivedAssertion });
   }
-  return derivedAssertions;
+  return derivations;
 }
 
 function sameAssertion(assertion1, assertion2) {
@@ -313,67 +313,186 @@ function hasAssertion(assertions, candidate) {
   return assertions.some((assertion) => sameAssertion(assertion, candidate));
 }
 
-function applyRulesOnce(rules, knownAssertions) {
+function applyRulesOnce(rules, knownAssertions, pass) {
   const newAssertions = [];
+  const derivationTrace = [];
 
   for (const rule of Object.values(rules)) {
-    const derivedAssertions = applyRule(rule, knownAssertions);
+    const derivations = applyRule(rule, knownAssertions);
 
-    for (const derivedAssertion of derivedAssertions) {
-      const alreadyKnown =
-        hasAssertion(knownAssertions, derivedAssertion) ||
-        hasAssertion(newAssertions, derivedAssertion);
+    for (const { path, derivedAssertion } of derivations) {
+      let rejectedBecause = null;
+      if (hasAssertion(knownAssertions, derivedAssertion)) {
+        rejectedBecause = "already-known";
+      } else if (hasAssertion(newAssertions, derivedAssertion)) {
+        rejectedBecause = "already-derived-this-pass";
+      }
 
-      if (!alreadyKnown) {
+      const accepted = rejectedBecause === null;
+      if (accepted) {
         newAssertions.push(derivedAssertion);
       }
+
+      derivationTrace.push({
+        type: "derivation",
+        pass,
+        rule,
+        matchedAssertions: path.matchedAssertions,
+        bindings: path.bindings,
+        produced: derivedAssertion,
+        accepted,
+        rejectedBecause,
+      });
     }
   }
 
-  return newAssertions;
+  const trace = [
+    { type: "pass", pass, accepted: newAssertions.length },
+    ...derivationTrace,
+  ];
+
+  return { newAssertions, trace };
 }
 
 function deriveUntilStable(rules, initialAssertions) {
   let knownAssertions = [...initialAssertions];
+  const trace = [];
+  let pass = 0;
   let newAssertions;
   do {
-    newAssertions = applyRulesOnce(rules, knownAssertions);
+    pass += 1;
+    const passResult = applyRulesOnce(rules, knownAssertions, pass);
+    newAssertions = passResult.newAssertions;
+    trace.push(...passResult.trace);
     knownAssertions = [...knownAssertions, ...newAssertions];
   } while (newAssertions.length > 0);
-  return knownAssertions;
+  return { assertions: knownAssertions, trace, passes: pass };
 }
 
 function resolveRequest(request, rules, assertions) {
+  const trace = [
+    {
+      type: "resolution-start",
+      request,
+      policy: request.policy,
+      establishedCount: assertions.length,
+    },
+  ];
+
   if (request.policy === "first") {
     let currentAssertions = [...assertions];
-    let matches = findPatternMatches(request.pattern, currentAssertions, {});
-
-    if (matches.length > 0) {
-      return matches;
-    }
+    let pass = 0;
 
     while (true) {
-      const newAssertions = applyRulesOnce(rules, currentAssertions);
-
-      if (newAssertions.length === 0) {
-        return [];
-      }
-
-      currentAssertions = [...currentAssertions, ...newAssertions];
-      matches = findPatternMatches(request.pattern, currentAssertions, {});
+      const matches = findPatternMatches(
+        request.pattern,
+        currentAssertions,
+        {},
+      );
 
       if (matches.length > 0) {
-        return matches;
+        trace.push({ type: "request-satisfied", pass, matches });
+        trace.push({ type: "resolution-stop", pass, reason: "satisfied" });
+        return { result: matches, trace };
       }
+
+      pass += 1;
+      const passResult = applyRulesOnce(rules, currentAssertions, pass);
+      trace.push(...passResult.trace);
+
+      if (passResult.newAssertions.length === 0) {
+        trace.push({
+          type: "resolution-stop",
+          pass,
+          reason: "stable-unsatisfied",
+        });
+        return { result: [], trace };
+      }
+
+      currentAssertions = [...currentAssertions, ...passResult.newAssertions];
     }
   }
 
   if (request.policy === "all") {
-    const allAssertions = deriveUntilStable(rules, assertions);
-    return findPatternMatches(request.pattern, allAssertions, {});
+    const derived = deriveUntilStable(rules, assertions);
+    trace.push(...derived.trace);
+
+    const matches = findPatternMatches(request.pattern, derived.assertions, {});
+    if (matches.length > 0) {
+      trace.push({ type: "request-satisfied", pass: derived.passes, matches });
+    }
+    trace.push({
+      type: "resolution-stop",
+      pass: derived.passes,
+      reason: "stable",
+    });
+    return { result: matches, trace };
   }
 
   throw new Error(`Unknown request policy: ${request.policy}`);
+}
+
+// ============================================================
+// 6. TRACE DISPLAY
+// ============================================================
+
+function describeValue(value) {
+  return isVariable(value) ? value : value.name;
+}
+
+function describeAssertion(assertion) {
+  return [assertion.subject, assertion.predicate, assertion.object]
+    .map(describeValue)
+    .join(" ");
+}
+
+function describeBindings(bindings) {
+  return Object.entries(bindings)
+    .map(([variable, value]) => `${variable}=${describeValue(value)}`)
+    .join(", ");
+}
+
+function formatTrace(trace) {
+  const lines = [];
+
+  for (const entry of trace) {
+    switch (entry.type) {
+      case "resolution-start":
+        lines.push(
+          `resolution start: policy=${entry.policy}, ` +
+            `pattern "${describeAssertion(entry.request.pattern)}", ` +
+            `${entry.establishedCount} established (pass 0)`,
+        );
+        break;
+      case "pass":
+        lines.push(`pass ${entry.pass}: ${entry.accepted} accepted`);
+        break;
+      case "derivation":
+        lines.push(
+          `  [${entry.rule.name}] ` +
+            (entry.accepted
+              ? "accepted"
+              : `rejected (${entry.rejectedBecause})`) +
+            `: ${describeAssertion(entry.produced)}`,
+        );
+        lines.push(
+          `    from: ${entry.matchedAssertions.map(describeAssertion).join("; ")}`,
+        );
+        lines.push(`    bindings: ${describeBindings(entry.bindings)}`);
+        break;
+      case "request-satisfied":
+        lines.push(
+          `request satisfied at pass ${entry.pass}: ` +
+            entry.matches.map((m) => describeBindings(m.bindings)).join(" | "),
+        );
+        break;
+      case "resolution-stop":
+        lines.push(`resolution stop at pass ${entry.pass}: ${entry.reason}`);
+        break;
+    }
+  }
+
+  return lines.join("\n");
 }
 
 // ============================================================
@@ -408,5 +527,11 @@ assertions.push({
   object: Term.Map,
 });
 
-console.log(resolveRequest(Requests.SomethingAliceHolds, Rules, assertions));
-console.log(resolveRequest(Requests.EverythingAliceHolds, Rules, assertions));
+for (const request of [
+  Requests.SomethingAliceHolds,
+  Requests.EverythingAliceHolds,
+]) {
+  const { result, trace } = resolveRequest(request, Rules, assertions);
+  console.log(result);
+  console.log(formatTrace(trace));
+}
